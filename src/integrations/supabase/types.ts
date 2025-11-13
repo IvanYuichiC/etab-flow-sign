@@ -14,16 +14,187 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: string | null
+          document_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: string | null
+          document_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: string | null
+          document_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          created_at: string
+          created_by: string
+          department: string
+          description: string | null
+          document_id: string
+          document_type: Database["public"]["Enums"]["document_type"]
+          id: string
+          status: Database["public"]["Enums"]["document_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          department: string
+          description?: string | null
+          document_id: string
+          document_type: Database["public"]["Enums"]["document_type"]
+          id?: string
+          status?: Database["public"]["Enums"]["document_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          department?: string
+          description?: string | null
+          document_id?: string
+          document_type?: Database["public"]["Enums"]["document_type"]
+          id?: string
+          status?: Database["public"]["Enums"]["document_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          department: string | null
+          email: string
+          full_name: string
+          id: string
+          position: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          email: string
+          full_name: string
+          id: string
+          position?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          email?: string
+          full_name?: string
+          id?: string
+          position?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      signatories: {
+        Row: {
+          created_at: string
+          document_id: string
+          id: string
+          order_index: number
+          remarks: string | null
+          signed_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          document_id: string
+          id?: string
+          order_index: number
+          remarks?: string | null
+          signed_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          document_id?: string
+          id?: string
+          order_index?: number
+          remarks?: string | null
+          signed_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signatories_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signatories_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_document_id: { Args: never; Returns: string }
     }
     Enums: {
-      [_ in never]: never
+      document_status: "Pending" | "In Progress" | "Completed" | "Returned"
+      document_type:
+        | "Memorandum"
+        | "Ordinance"
+        | "Resolution"
+        | "Permit"
+        | "Certificate"
+        | "Letter"
+        | "Other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +321,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      document_status: ["Pending", "In Progress", "Completed", "Returned"],
+      document_type: [
+        "Memorandum",
+        "Ordinance",
+        "Resolution",
+        "Permit",
+        "Certificate",
+        "Letter",
+        "Other",
+      ],
+    },
   },
 } as const
