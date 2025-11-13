@@ -1,0 +1,315 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Header } from "@/components/Header";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, Upload, Plus, X } from "lucide-react";
+import { z } from "zod";
+
+const documentSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters").max(200),
+  description: z.string().max(1000).optional(),
+  document_type: z.string().min(1, "Please select a document type"),
+  department: z.string().min(2, "Department is required").max(100),
+});
+
+export default function UploadDocument() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    document_type: "",
+    department: "",
+  });
+  const [signatories, setSignatories] = useState<string[]>([]);
+  const [selectedUser, setSelectedUser] = useState("");
+
+  useEffect(() => {
+    checkUser();
+    fetchUsers();
+  }, []);
+
+  const checkUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      navigate("/auth");
+      return;
+    }
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", session.user.id)
+      .single();
+    
+    setProfile(data);
+  };
+
+  const fetchUsers = async () => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("full_name");
+    
+    if (data) setUsers(data);
+  };
+
+  const addSignatory = () => {
+    if (selectedUser && !signatories.includes(selectedUser)) {
+      setSignatories([...signatories, selectedUser]);
+      setSelectedUser("");
+    }
+  };
+
+  const removeSignatory = (userId: string) => {
+    setSignatories(signatories.filter((id) => id !== userId));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      const validatedData = documentSchema.parse(formData);
+      
+      if (signatories.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: "Please add at least one signatory",
+        });
+        return;
+      }
+
+      setLoading(true);
+
+      // Generate document ID
+      const { data: docIdData } = await supabase.rpc("generate_document_id");
+      const documentId = docIdData;
+
+      // Insert document
+      const { data: document, error: docError } = await supabase
+        .from("documents")
+        .insert({
+          document_id: documentId,
+          title: validatedData.title,
+          description: validatedData.description,
+          document_type: validatedData.document_type,
+          department: validatedData.department,
+          created_by: profile.id,
+        })
+        .select()
+        .single();
+
+      if (docError) throw docError;
+
+      // Insert signatories
+      const signatoryData = signatories.map((userId, index) => ({
+        document_id: document.id,
+        user_id: userId,
+        order_index: index,
+      }));
+
+      const { error: sigError } = await supabase
+        .from("signatories")
+        .insert(signatoryData);
+
+      if (sigError) throw sigError;
+
+      // Log audit trail
+      await supabase.from("audit_logs").insert({
+        document_id: document.id,
+        user_id: profile.id,
+        action: "Document Created",
+        details: `Document ${documentId} created with ${signatories.length} signatories`,
+      });
+
+      toast({
+        title: "Document created!",
+        description: `Document ID: ${documentId}`,
+      });
+
+      navigate(`/document/${document.id}`);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: error.errors[0].message,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error creating document",
+          description: error.message,
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getUserName = (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    return user?.full_name || "Unknown User";
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header user={profile} />
+      
+      <main className="container mx-auto px-4 py-8 max-w-3xl">
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/dashboard")}
+          className="mb-6"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Dashboard
+        </Button>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl flex items-center gap-2">
+              <Upload className="w-6 h-6 text-primary" />
+              Upload New Document
+            </CardTitle>
+            <CardDescription>
+              Fill in the document details and assign signatories
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="title">Document Title</Label>
+                <Input
+                  id="title"
+                  placeholder="e.g., Municipal Ordinance 2024-001"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Brief description of the document..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="document_type">Document Type</Label>
+                  <Select
+                    value={formData.document_type}
+                    onValueChange={(value) => setFormData({ ...formData, document_type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Memorandum">Memorandum</SelectItem>
+                      <SelectItem value="Ordinance">Ordinance</SelectItem>
+                      <SelectItem value="Resolution">Resolution</SelectItem>
+                      <SelectItem value="Permit">Permit</SelectItem>
+                      <SelectItem value="Certificate">Certificate</SelectItem>
+                      <SelectItem value="Letter">Letter</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="department">Department</Label>
+                  <Input
+                    id="department"
+                    placeholder="e.g., Mayor's Office"
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <Label>Signatories (in order)</Label>
+                <div className="flex gap-2">
+                  <Select value={selectedUser} onValueChange={setSelectedUser}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select a signatory" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users
+                        .filter((u) => !signatories.includes(u.id))
+                        .map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.full_name} {user.position && `- ${user.position}`}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" onClick={addSignatory} variant="outline">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                {signatories.length > 0 && (
+                  <div className="space-y-2">
+                    {signatories.map((userId, index) => (
+                      <div
+                        key={userId}
+                        className="flex items-center justify-between p-3 bg-muted rounded-md"
+                      >
+                        <div>
+                          <span className="font-medium mr-2">{index + 1}.</span>
+                          {getUserName(userId)}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeSignatory(userId)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigate("/dashboard")}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={loading} className="flex-1">
+                  {loading ? "Creating..." : "Create Document"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  );
+}
