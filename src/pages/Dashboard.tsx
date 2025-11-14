@@ -43,7 +43,7 @@ export default function Dashboard() {
       .from("profiles")
       .select("*")
       .eq("id", userId)
-      .single();
+      .maybeSingle();
     
     setProfile(data);
   };
